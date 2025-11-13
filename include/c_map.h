@@ -1,99 +1,69 @@
-#ifndef H_CMAP
-#define H_CMAP
-
-//=============================Includes=============================//
-
+#include "c_types.h"
 #include <stdlib.h>
 #include <stdio.h>
-
-#include "c_types.h"
-
-//=============================Constants=============================//
-
-// Restriction constants.
-
-#define CMAP_MAX_SIZE                            (t_uint32)CTYPE_UINT32_MAX
-
-// Error and success constants.
-
-#define CMAP_ERROR_MEMORY_ALLOCATION             (t_exec_code)-1
-#define CMAP_ERROR_OVERFLOW                      (t_exec_code)-2
-#define CMAP_ERROR_ITEM_NOT_FOUND                (t_exec_code)-3
-#define CMAP_ERROR_INVALID_RESIZE_DIRECTION      (t_exec_code)-4
-#define CMAP_ERROR_INVALID_MAP_SIZE              (t_exec_code)-5
-#define CMAP_ERROR_INVALID_PTR                   (t_exec_code)-6
-#define CMAP_SUCCESS_EXECUTED                    (t_exec_code)1
-#define CMAP_SUCCESS_ITEM_FOUND                  (t_exec_code)2
-
-// Map resize constants.
-
-#define CMAP_KEY_GROWTH_SIZE                     (t_uint8)1
-#define CMAP_KEY_SHRINK_SIZE                     (t_uint8)2
-
-// Map factors and size constants.
-
-#define CMAP_SMALL_SIZE                          (t_uint32)2000
-#define CMAP_SMALL_GROWTH_AT                     (t_float32)0.7f
-#define CMAP_SMALL_SHRINK_AT                     (t_float32)0.4f
-#define CMAP_MEDIUM_SIZE                         (t_uint32)2147483647
-#define CMAP_MEDIUM_GROWTH_AT                    (t_float32)0.8f
-#define CMAP_MEDIUM_SHRINK_AT                    (t_float32)0.5f
-#define CMAP_BIG_SIZE                            (t_uint32)CTYPE_UINT32_MAX
-#define CMAP_BIG_GROWTH_AT                       (t_float32)0.9f
-#define CMAP_BIG_SHRINK_AT                       (t_float32)0.5f
-
-//=============================Macros=============================//
-
-#define CMAP_FAIL_IF(cond, err_code) \
-do {                                 \
-	if(cond) return err_code;          \
-} while(0)
-#define CMAP_SAFE_CALL(x)                \
-do {                                     \
-	t_exec_code exec_code = (x);           \
-	if(exec_code != CMAP_SUCCESS_EXECUTED) \
-		return exec_code;                    \
-} while(0)
-#define CMAP_GET_PRIME_FROM(x)               (x * 2) >= CMAP_MAX_SIZE ? CMAP_MAX_SIZE : (x * 2)
-#define CMAP_IS_MAP_TO_BIG(occupied, size)   (((t_float32)occupied) / size) <= (CMAP_GET_SHRINK_FACTOR(size))
-#define CMAP_IS_MAP_TO_SMALL(occupied, size) (((t_float32)occupied) / size) >= (CMAP_GET_GROWTH_FACTOR(size))
-#define CMAP_GET_SHRINK_FACTOR(size)         size >= CMAP_BIG_SIZE    ? CMAP_BIG_SHRINK_AT    :                      \
-																		         size >= CMAP_MEDIUM_SIZE ? CMAP_MEDIUM_SHRINK_AT :                      \
-																		         size <= CMAP_SMALL_SIZE  ? CMAP_SMALL_SHRINK_AT  : CMAP_SMALL_SHRINK_AT
-#define CMAP_GET_GROWTH_FACTOR(size)         size >= CMAP_BIG_SIZE    ? CMAP_BIG_GROWTH_AT    :                      \
-																		         size >= CMAP_MEDIUM_SIZE ? CMAP_MEDIUM_GROWTH_AT :                      \
-																		         size <= CMAP_SMALL_SIZE  ? CMAP_SMALL_GROWTH_AT  : CMAP_SMALL_GROWTH_AT
-
-//=============================Main API=============================//
+#include <string.h>
 
 typedef struct {
-	const t_char*  m_key;
-	t_any          m_value;
-	// Used for comparing.
-	t_uint32       m_hash;
-} s_cmap_item;
+	t_char*   m_key;
+	t_any     m_value;
+	t_int64   _m_hash;
+} cmap_item;
 
 typedef struct {
-	t_uint32      m_size;
-	t_uint32      m_occupied;
-	s_cmap_item** m_items;
-} s_cmap_map;
+	t_int64    m_size;
+	t_int64    _m_occupied;
+	t_int8     _m_is_resizable;
+	t_int8     _m_mem_loc;
+	cmap_item* _m_items;
+} cmap;
 
-t_exec_code cmap_init(s_cmap_map* this, t_uint32 size);
-t_exec_code cmap_set(s_cmap_map* this, const t_char* key, const t_any value);
-t_exec_code cmap_get(s_cmap_map this, s_cmap_item** item, t_char* key);
-t_exec_code cmap_clear(s_cmap_map* this);
-t_exec_code cmap_remove(s_cmap_map* this, const t_char* key);
+#define CMAP_MAX_MAP_SIZE CTYPE_INT64_MAX - 10
 
-//=============================Helper functions=============================//
+#define CMAP_MEM_LOC_STACK 1
+#define CMAP_MEM_LOC_HEAP  2
 
-static inline __attribute__((always_inline))
-t_exec_code cmap_gen_hash(t_uint32* hash, const t_char* key);
-static inline __attribute__((always_inline))
-t_exec_code cmap_find_free_index(t_uint32* item_index, const s_cmap_item** items, t_uint32 size);
-static inline __attribute__((always_inline))
-t_exec_code cmap_find_index_by_hash(t_uint32* item_index, t_uint32 hash, const s_cmap_item** items, t_uint32 size);
-static inline __attribute__((always_inline))
-t_exec_code cmap_resize(s_cmap_map* this, t_uint8 direction);
+#define CMAP_GROWTH 1
+#define CMAP_SHRINK 0
 
-#endif
+#define CMAP_ERR_INVALID_PTR                   -1
+#define CMAP_ERR_INVALID_CMAP_SIZE             -2
+#define CMAP_ERR_INVALID_KEY                   -3
+#define CMAP_ERR_MEM_ALLOCATION                -4
+#define CMAP_ERR_MAP_IS_FULL_AND_NOT_RESIZABLE -5
+#define CMAP_ERR_CAN_NOT_FIND_FREE_INDEX       -6
+#define CMAP_ERR_CAN_NOT_FIND_ITEM             -7
+
+#define CMAP_SUCCESS          0
+
+#define CMAP_FAIL_IF(cond, code) do { \
+	if(cond) { \
+		return code; \
+	} \
+} while(0); 
+#define CMAP_MOVE_TO_NEW_POSITION(new_item, old_item, new_hash) do { \
+	new_item.m_key   = old_item.m_key; \
+	new_item.m_value = old_item.m_value; \
+	new_item._m_hash = new_hash; \
+} while(0);
+#define CMAP_SAFE_CALL(expr_res) do { \
+	t_int64 res = expr_res; \
+	if(res < 0) { return res; } \
+} while(0);
+
+#define SHOULD_MAP_GROWTH(map) map->_m_is_resizable && (((t_float32)(map)->_m_occupied)) / (map)->m_size >= 0.75f
+#define SHOULD_MAP_SHRINK(map) map->_m_is_resizable && (((t_float32)(map)->_m_occupied)) / (map)->m_size <= 0.50f
+#define CMAP_CONCAT_STRING(...) __VA_ARGS__
+
+void cmap_print(cmap* self);
+
+t_int64 cmap_sinit(cmap* self, cmap_item* buff, t_int64 size, t_int8 should_expand);
+t_int64 cmap_dinit(cmap* self, t_int64 size, t_int8 should_expand);
+t_int64 cmap_set(cmap* self, t_char* key, t_any value);
+t_int64 cmap_get(cmap* self, cmap_item* item, t_char* key);
+t_int64 cmap_delete(cmap* self, t_char* key);
+
+void    cmap_find_item_index_by_hash(cmap* self, t_int64 hash, t_int64* start);
+void    cmap_find_free_index(cmap_item* items, t_int64 size, t_int64* index);
+t_int64 cmap_resize(cmap* self, t_uint8 direction);
+
+t_int64 cmap_hash(t_char* key);

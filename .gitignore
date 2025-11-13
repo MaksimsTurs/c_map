@@ -1,6 +1,1 @@
-# DEV Items.
-include/c_bench.h
-
-main.c
-
-main.exe
+.vscode

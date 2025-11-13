@@ -1,306 +1,295 @@
-#include "include/c_map.h"
+#include "./include/c_map.h"
 
-static inline __attribute__((always_inline)) 
-t_exec_code 
-cmap_gen_hash(t_uint32* hash, const t_char* key) 
+void cmap_print(cmap* self)
 {
-	CMAP_FAIL_IF(hash == NULL || key == NULL, CMAP_ERROR_INVALID_PTR);
-	// Local hash with initialized magic num.
-	t_uint32      l_hash  = 0x811c9dc5;
-	t_uint8       ch      = 0;
-	const t_char* key_tmp = key;
+	printf("Size(%.5lli)\n", self->m_size);
+	printf("Occupied(%.5lli)\n", self->_m_occupied);
 
-	while((ch = *key++) && (key - key_tmp) < 4) 
-	{
-		l_hash = (l_hash << 5) + ch;
-	}
+  for(t_int64 index = 0; index < self->m_size; index++)
+  {
+		printf("Index(%lli) Hash(%lli)\n", index, self->_m_items[index]._m_hash);
+  }
 
-	*hash = l_hash;
-
-	return CMAP_SUCCESS_EXECUTED;
+	printf("\n");
 }
 
-
-static inline __attribute__((always_inline)) 
-t_exec_code 
-cmap_find_free_index(t_uint32* item_index, const s_cmap_item** items, t_uint32 size) 
+t_int64 cmap_hash(t_char* key)
 {
-	CMAP_FAIL_IF(item_index == NULL || items == NULL, CMAP_ERROR_INVALID_PTR);
-	CMAP_FAIL_IF(size == 0                          , CMAP_ERROR_INVALID_MAP_SIZE);
+	t_int64 hash  = 0;
+	t_int64 index = 0;
 
-	t_uint32 l_item_index = *item_index;
-	t_uint32 index        = 0;
-
-	if(size <= CMAP_SMALL_SIZE) 
-	{
-		// Linear probe.
-		while(items[l_item_index] != NULL) 
-		{
-			l_item_index++;
-			
-			if(l_item_index == size)
-				l_item_index = 0;
-		}	
-	} 
-	else 
-	{
-		// Quadratic probe.
-		while(items[l_item_index] != NULL) 
-		{			
-			l_item_index = (l_item_index + (index * index)) % size;
-			l_item_index++;
-
-			if(l_item_index == size) 
-				l_item_index = 0;
-		}	
+	while(*key) {
+		hash += (*key++ + index) << 5;
+		index++;
 	}
 
-	*item_index = l_item_index;
-
-	return CMAP_SUCCESS_EXECUTED;
+	return hash;
 }
 
-static inline __attribute__((always_inline)) 
-t_exec_code cmap_find_index_by_hash(t_uint32* item_index, t_uint32 hash, const s_cmap_item** items, t_uint32 size) 
+void cmap_find_item_index_by_hash(cmap* self, t_int64 hash, t_int64* start)
 {
-	CMAP_FAIL_IF(item_index == NULL || items == NULL, CMAP_ERROR_INVALID_PTR);
-	// Used for finding and saving index for item.
-	t_uint32 l_item_index = *item_index;
-	// Used for probe algorithm.
-	t_uint32 index        = 0;
-	t_uint32 probe_count  = 0;
-
-	// In worst case, if we have two different keys with two identical hashes,
-	// this loop will go through the entire.
-	if(size <= CMAP_SMALL_SIZE) 
-	{
-		while(probe_count < size) 
-		{
-			if(items[l_item_index] != NULL && (items[l_item_index]->m_hash == hash)) 
-			{
-				*item_index = l_item_index;
-				return CMAP_SUCCESS_ITEM_FOUND;
-			}
+	t_int64 probe_count = 0;
+	t_int64 index       = *start;
 	
-			l_item_index++;
-			probe_count++;
-
-			if(l_item_index == size) 
-				l_item_index = 0;
+	while(probe_count < self->m_size) 
+	{
+		if(index >= self->m_size)
+		{
+			index = 0;
 		}
-	} 
-	else 
-	{
-		while(probe_count < size) 
+		
+		if(self->_m_items[index]._m_hash == hash) 
 		{
-			if((items[l_item_index] != NULL) && (items[l_item_index]->m_hash == hash)) 
-			{
-				*item_index = l_item_index;
-				return CMAP_SUCCESS_ITEM_FOUND;
-			}
-			
-			l_item_index = (l_item_index + (index * index)) % size;
-			index++;
-			probe_count++;
-
-			if(l_item_index == size) 
-				l_item_index = 0;
+			*start = index;
+			break;
 		}
+		
+		probe_count++;
+		index++;
+	}
+	
+	if(probe_count == self->m_size)
+	{
+		*start = -1;
+	}
+}
+
+void cmap_find_free_index(cmap_item* items, t_int64 size, t_int64* start)
+{
+	t_int64 probe_count = 0;
+	t_int64 index       = *start;
+
+	while(probe_count < size)
+	{
+		if(index >= size)
+		{
+			index = 0;
+		}
+		
+		if(!items[index]._m_hash)
+		{
+			*start = index;
+			break;
+		}
+
+		probe_count++;
+		index++;
 	}
 
-	return CMAP_ERROR_ITEM_NOT_FOUND;
-}
-
-static inline __attribute__((always_inline))
-t_exec_code cmap_resize(s_cmap_map* this, t_uint8 direction) 
-{
-	CMAP_FAIL_IF(this == NULL, CMAP_ERROR_INVALID_PTR);
-
-	t_uint32      old_size   = this->m_size;
-	t_uint32      index      = 0;
-	t_uint32      item_index = 0;
-
-	if(direction == CMAP_KEY_GROWTH_SIZE) 
+	if(probe_count == size)
 	{
-		this->m_size  = CMAP_GET_PRIME_FROM(this->m_size);
-		this->m_items = (s_cmap_item**)realloc(this->m_items, this->m_size * sizeof(s_cmap_item*));
-		CMAP_FAIL_IF(this->m_items == NULL, CMAP_ERROR_MEMORY_ALLOCATION);
-		for(index = old_size; index < this->m_size; index++)
-			this->m_items[index] = NULL;	
-
-		for(index = 0; index < old_size; index++) 
-		{
-			if(this->m_items[index] != NULL) {
-				item_index = this->m_items[index]->m_hash % this->m_size;			
-					
-				if((this->m_items[item_index] != NULL && this->m_items[index] != NULL) && 
-					 (this->m_items[index]->m_hash != this->m_items[item_index]->m_hash))
-					CMAP_SAFE_CALL(cmap_find_free_index(&item_index, (const s_cmap_item**)this->m_items, this->m_size));
-				else if((this->m_items[item_index] != NULL && this->m_items[index] != NULL) &&
-								(this->m_items[index]->m_hash == this->m_items[item_index]->m_hash))
-					continue;
-		
-				this->m_items[item_index] = this->m_items[index];
-				this->m_items[index]      = NULL;
-			}
-		}		
-	}	
-	else if(direction == CMAP_KEY_SHRINK_SIZE) 
-	{
-		this->m_size  = CMAP_GET_PRIME_FROM(this->m_occupied);
-
-		for(index = 0; index < old_size; index++) 
-		{
-			if(this->m_items[index] != NULL) {
-				item_index = this->m_items[index]->m_hash % this->m_size;			
-					
-				if((this->m_items[item_index] != NULL && this->m_items[index] != NULL) && 
-					 (this->m_items[index]->m_hash != this->m_items[item_index]->m_hash))
-					CMAP_SAFE_CALL(cmap_find_free_index(&item_index, (const s_cmap_item**)this->m_items, this->m_size));
-				else if((this->m_items[item_index] != NULL && this->m_items[index] != NULL) &&
-								(this->m_items[index]->m_hash == this->m_items[item_index]->m_hash))
-					continue;
-		
-				this->m_items[item_index] = this->m_items[index];
-				this->m_items[index]      = NULL;
-			}
-		}	
-
-		this->m_items = (s_cmap_item**)realloc(this->m_items, this->m_size * sizeof(s_cmap_item*));
-		CMAP_FAIL_IF(this->m_items == NULL, CMAP_ERROR_MEMORY_ALLOCATION);
-	}	else
-		return CMAP_ERROR_INVALID_RESIZE_DIRECTION;
-
-	return CMAP_SUCCESS_EXECUTED;
+		*start = -1;
+	}
 }
 
-t_exec_code cmap_init(s_cmap_map* this, t_uint32 size) 
+t_int64 cmap_dinit(cmap* self, t_int64 size, t_int8 is_resizable)
 {
-	CMAP_FAIL_IF(this == NULL, CMAP_ERROR_INVALID_PTR);
-	CMAP_FAIL_IF(size == 0   , CMAP_ERROR_INVALID_MAP_SIZE);
+	CMAP_FAIL_IF(self == NULL,             CMAP_ERR_INVALID_PTR);
+	CMAP_FAIL_IF(size > CMAP_MAX_MAP_SIZE, CMAP_ERR_INVALID_PTR);
 
-	this->m_size           = size;
-	this->m_occupied       = 0;
-	this->m_items          = (s_cmap_item**)calloc(size, sizeof(s_cmap_item));
-	CMAP_FAIL_IF(this->m_items == NULL, CMAP_ERROR_MEMORY_ALLOCATION);
+	self->_m_items = (cmap_item*)malloc(size * sizeof(cmap_item));
+	CMAP_FAIL_IF(self->_m_items == NULL, CMAP_ERR_MEM_ALLOCATION);
 
-	return CMAP_SUCCESS_EXECUTED;
-}
+	memset(self->_m_items, 0, size * sizeof(cmap_item));
 
-t_exec_code cmap_set(s_cmap_map* this, const t_char* key, const t_any value) 
-{
-	CMAP_FAIL_IF(this == NULL || key == NULL                                  , CMAP_ERROR_INVALID_PTR);
-	CMAP_FAIL_IF(this->m_size > CMAP_MAX_SIZE                                 , CMAP_ERROR_OVERFLOW);
-
-	s_cmap_item* item       = NULL;
-	t_exec_code  exec_code  = 0;
-	t_uint32     hash       = 0;
-	t_uint32     item_index = 0;
+	self->_m_is_resizable = is_resizable;
+	self->_m_mem_loc      = CMAP_MEM_LOC_HEAP;
+	self->m_size          = size;
+	self->_m_occupied     = 0;
 	
-	CMAP_SAFE_CALL(cmap_gen_hash(&hash, key));
-	item_index = hash % this->m_size;
-	
-	// Collision was found.
-	if(this->m_items[item_index] != NULL) 
+	return CMAP_SUCCESS;
+}
+
+t_int64 cmap_sinit(cmap* self, cmap_item* buff, t_int64 size, t_int8 is_resizable)
+{
+	CMAP_FAIL_IF(self == NULL || buff == NULL, CMAP_ERR_INVALID_PTR);
+	CMAP_FAIL_IF(size > CMAP_MAX_MAP_SIZE,     CMAP_ERR_INVALID_PTR);
+
+	self->m_size          = size;
+	self->_m_items        = buff;
+	self->_m_mem_loc      = CMAP_MEM_LOC_STACK;
+	self->_m_occupied     = 0;
+	self->_m_is_resizable = is_resizable;
+		
+	return CMAP_SUCCESS;
+}
+
+t_int64 cmap_set(cmap* self, t_char* key, t_any value)
+{
+	CMAP_FAIL_IF(self == NULL,                                                CMAP_ERR_INVALID_PTR);
+	CMAP_FAIL_IF(*key == '\0',                                                CMAP_ERR_INVALID_KEY);
+	CMAP_FAIL_IF(!self->m_size,                                               CMAP_ERR_INVALID_CMAP_SIZE);
+	CMAP_FAIL_IF(self->m_size == self->_m_occupied && !self->_m_is_resizable, CMAP_ERR_MAP_IS_FULL_AND_NOT_RESIZABLE);
+
+	t_int64 hash = 0;
+	t_int64 index = 0;
+
+	hash = cmap_hash(key);
+	index = hash % self->m_size;
+
+	if(self->_m_items[index]._m_hash)
 	{
-		// Check if there is an element with the same key.
-		exec_code = cmap_find_index_by_hash(&item_index, hash, (const s_cmap_item**)this->m_items, this->m_size);
-		if(exec_code == CMAP_SUCCESS_ITEM_FOUND) 
+		cmap_find_item_index_by_hash(self, hash, &index);
+		
+		if(index == -1)
 		{
-			// BEST CASE!
-			// Equal hashes was generated because of equivalent keys, copy pointer to the new value.
-			this->m_items[item_index]->m_value = value;
-			return CMAP_SUCCESS_EXECUTED;
-		} 
+			index = hash % self->m_size;
+			cmap_find_free_index(self->_m_items, self->m_size, &index);
+			
+			self->_m_items[index]._m_hash = hash;
+			self->_m_items[index].m_key = key;
+			self->_m_items[index].m_value = value;
+			
+			self->_m_occupied++;
+		}
 		else 
 		{
-			// WORST CASE!
-			// Equal hashes was generated because of not much place in map or bad hash functon, 
-			// find next free hash for new element.
-			CMAP_SAFE_CALL(cmap_find_free_index(&item_index, (const s_cmap_item**)this->m_items, this->m_size));	
+			self->_m_items[index].m_value = value;
+		}
+	} 
+	else
+	{
+		self->_m_items[index]._m_hash = hash;
+		self->_m_items[index].m_key   = key;
+		self->_m_items[index].m_value = value;
+		
+		self->_m_occupied++;
+	}
+	
+	if(SHOULD_MAP_GROWTH(self))
+	{
+		CMAP_SAFE_CALL(cmap_resize(self, CMAP_GROWTH));
+	}
+
+	return CMAP_SUCCESS;
+}
+
+t_int64 cmap_resize(cmap* self, t_uint8 direction)
+{	
+	CMAP_FAIL_IF(self == NULL, CMAP_ERR_INVALID_PTR);
+
+	t_int64    old_size  = self->m_size;
+	t_int64    new_hash  = 0;
+	t_int64    new_index = 0;
+	cmap_item* new_items = NULL;
+
+	self->m_size = direction == CMAP_GROWTH ? self->m_size * 2 : self->m_size / 2;
+	new_items = (cmap_item*)malloc(self->m_size * sizeof(cmap_item));
+	memset(new_items, 0, self->m_size * sizeof(cmap_item));
+
+	for(t_int64 index = 0; index < old_size; index++)
+	{
+		if(self->_m_items[index]._m_hash)
+		{
+			new_hash = cmap_hash(self->_m_items[index].m_key);
+			new_index = new_hash % self->m_size;
+			
+			if(new_items[new_index]._m_hash)
+			{
+				cmap_find_free_index(new_items, self->m_size, &new_index);
+
+				if(new_index == -1)
+				{
+					return CMAP_ERR_CAN_NOT_FIND_FREE_INDEX;
+				}
+				else
+				{
+					CMAP_MOVE_TO_NEW_POSITION(new_items[new_index], self->_m_items[index], new_hash);
+				}
+			}
+			else
+			{
+				CMAP_MOVE_TO_NEW_POSITION(new_items[new_index], self->_m_items[index], new_hash);
+			}
+		}
+	}
+	
+	if(self->_m_mem_loc == CMAP_MEM_LOC_HEAP)
+	{
+		free(self->_m_items);
+		self->_m_items = NULL;
+	}
+	
+	self->_m_items = new_items;
+
+	return CMAP_SUCCESS;
+}
+
+t_int64 cmap_get(cmap* self, cmap_item* item, t_char* key)
+{
+	CMAP_FAIL_IF(self == NULL, CMAP_ERR_INVALID_PTR);
+	CMAP_FAIL_IF(item == NULL, CMAP_ERR_INVALID_PTR);
+	CMAP_FAIL_IF(key  == NULL, CMAP_ERR_INVALID_PTR);
+	CMAP_FAIL_IF(*key == '\0', CMAP_ERR_INVALID_KEY);
+
+	t_int64 hash  = 0;
+	t_int64 index = 0;
+
+	hash = cmap_hash(key);
+	index = hash % self->m_size;
+
+	if(self->_m_items[index]._m_hash == hash)
+	{
+		*item = self->_m_items[index];
+	}
+	else
+	{
+		cmap_find_item_index_by_hash(self, hash, &index);
+
+		if(index == -1) 
+		{
+			return CMAP_ERR_CAN_NOT_FIND_ITEM;
+		}
+		else 
+		{
+			*item = self->_m_items[index];
 		}
 	}
 
-	item = (s_cmap_item*)malloc(sizeof(s_cmap_item));
-	CMAP_FAIL_IF(item == NULL, CMAP_ERROR_MEMORY_ALLOCATION);
-	
-	item->m_key   = key;
-	item->m_value = value;
-	item->m_hash  = hash;
-	
-	this->m_items[item_index] = item;
-	this->m_occupied++;
-
-	if(CMAP_IS_MAP_TO_SMALL(this->m_occupied, this->m_size))
-		CMAP_SAFE_CALL(cmap_resize(this, CMAP_KEY_GROWTH_SIZE));
-	
-	return CMAP_SUCCESS_EXECUTED;
+	return CMAP_SUCCESS;
 }
 
-t_exec_code cmap_get(s_cmap_map this, s_cmap_item** item, t_char* key) 
+t_int64 cmap_delete(cmap* self, t_char* key)
 {
-	CMAP_FAIL_IF(item == NULL || key == NULL, CMAP_ERROR_INVALID_PTR);
+	CMAP_FAIL_IF(self == NULL, CMAP_ERR_INVALID_PTR);
+	CMAP_FAIL_IF(*key == '\0', CMAP_ERR_INVALID_KEY);
 
-	t_uint32    hash       = 0;
-	t_uint32    item_index = 0;
-	t_exec_code exec_code  = 0;
-	
-	exec_code = cmap_gen_hash(&hash, key);
-	if(exec_code != CMAP_SUCCESS_EXECUTED) 
+	t_int64 hash  = 0;
+	t_int64 index = 0;
+
+	hash = cmap_hash(key);
+	index = hash % self->m_size;
+
+	if(self->_m_items[index]._m_hash == hash)
 	{
-		*item = NULL;
-		return exec_code;
-	}
-
-	item_index = hash % this.m_size;
-	exec_code = cmap_find_index_by_hash(&item_index, hash, (const s_cmap_item**)this.m_items, this.m_size);
-	if(exec_code == CMAP_ERROR_ITEM_NOT_FOUND) 
-	{
-		*item = NULL;
-		return exec_code;
-	}
-	
-	*item = this.m_items[item_index];
-
-	return *item == NULL ? CMAP_ERROR_ITEM_NOT_FOUND : CMAP_SUCCESS_ITEM_FOUND;
-}
-
-t_exec_code cmap_clear(s_cmap_map* this) 
-{
-	for(t_uint32 index = 0; index < this->m_size; index++) 
-	{
-		free(this->m_items[index]);
-		this->m_items[index] = NULL;
-	}
-
-	free(this->m_items);
-
-	this->m_items    = NULL;
-	this->m_size     = 0;
-	this->m_occupied = 0;
-
-	return CMAP_SUCCESS_EXECUTED;
-}
-
-t_exec_code cmap_remove(s_cmap_map* this, const t_char* key) 
-{
-	CMAP_FAIL_IF(this == NULL || key == NULL, CMAP_ERROR_INVALID_PTR);
-
-	t_uint32 hash       = 0;
-	t_uint32 item_index = 0;
-
-	CMAP_SAFE_CALL(cmap_gen_hash(&hash, key));
-	item_index = hash % this->m_size;
+		self->_m_items[index]._m_hash = 0;
+		self->_m_items[index].m_key   = NULL;
+		self->_m_items[index].m_value = NULL;
 			
-	if(cmap_find_index_by_hash(&item_index, hash, (const s_cmap_item**)this->m_items, this->m_size) == CMAP_ERROR_ITEM_NOT_FOUND)
-		return CMAP_ERROR_ITEM_NOT_FOUND;		
-	
-	free(this->m_items[item_index]);
-	this->m_items[item_index] = NULL;
-	this->m_occupied--;
+		self->_m_occupied--;
+	}
+	else
+	{
+		cmap_find_item_index_by_hash(self, hash, &index);
 
-	if(CMAP_IS_MAP_TO_BIG(this->m_occupied, this->m_size))
-		CMAP_SAFE_CALL(cmap_resize(this, CMAP_KEY_SHRINK_SIZE));
+		if(index == -1) 
+		{
+			return CMAP_ERR_CAN_NOT_FIND_ITEM;
+		}
+		else 
+		{
+			self->_m_items[index]._m_hash = 0;
+			self->_m_items[index].m_key   = NULL;
+			self->_m_items[index].m_value = NULL;
 
-	return CMAP_SUCCESS_EXECUTED;
+			self->_m_occupied--;
+		}
+	}
+
+	if(SHOULD_MAP_SHRINK(self))
+	{
+		CMAP_SAFE_CALL(cmap_resize(self, CMAP_SHRINK));
+	}
+
+	return CMAP_SUCCESS;
 }

@@ -1,95 +1,59 @@
 # C Map
-Small and simple C library (3 Kb) for key - value map.
-## Errors
-Every function return `t_exec_code (int8)` execution code, negative numbers for errors and positive numbers for success codes.
+
+C Map is a very simple Hash Table implemintation in C.
+
 ## API
-`t_exec_code cmap_init(s_cmap_map* this, t_uint32 size)` initialize a `size` of Map items on the heap.
+`cmap_sinit`: Initialize a stack based Map that work with the buffer that **must** be allocated on the stack, when the Map does not have more place and `is_resizable` parameters is `0` the `cmap_set` function will return an error code and do nothing. By passing a `1` the Map will switch from stack based to heap based and use heap as a storage, returns a error code. 
+
+`cmap_dinit`: Initialize a heap based Map, when the Map does not have more place and to `is_resizable` parameters was passed a `0` the `cmap_set` function will return a error code and do nothing. By passing a `1` the map will expand, returns error code.
+
+`cmap_set`: Set a new value or overwrite the old value when the existing key was passed, returns error code.
+
+`cmap_get`: Save a map item data in the `cmap_item` structure, return error code when item with the passed key does not exist, returns error code.
+
+`cmap_delete`: Remove single item from the map, returns error code.
+
+`cmap_print`: For debbuging purposes, print all elements in the map.
+
+## Example
 ```c
-	s_cmap_map map = {0}
+#include "../include/c_map.h"
 
-	cmap_init(&map, 10);
-```
-`t_exec_code cmap_set(s_cmap_map* this, const t_char* key, const t_any value)` When collision is detected we check with function `cmap_find_index_by_hash` is this collision was happen because whe have two equal hashes but unexist key or because whe have passed a key of existed item. Best case is that we have existed key, than whe simple save a new pointer to `m_value`, worst case is that key doesn't exist and we need to find a free space in map for new item. It map is to small it will be resized. Life time must be controlled by user!
-```c
-	s_cmap_map map = {0}
-	
-	cmap_init(&map, 10);
-	// Alloc memory for new item and save him.
-	cmap_set(&map, "Name", "X");
-	// Set new `Name` value.
-	cmap_set(&map, "Name", "XY");
-```
-`t_exec_code cmap_get(s_cmap_map this, s_cmap_item** item, t_char* key)` get a item from map by key, when item doesn't exist function save a `NULL`.
-```c
-	s_cmap_map map = {0}
-	s_cmap_item* item = {0};
-	
-	cmap_init(&map, 10);
-	cmap_set(&map, "Name", "X");
+int main(void)
+{
+  cmap _1 = {0};
+  cmap _2 = {0};
 
-	cmap_get(map, &item, "Name"); // { m_value: "X" m_key: "Name" m_hash: xxxx }
-	cmap_get(map, &item, "Age"); // NULL
-```
-`t_exec_code cmap_clear(s_cmap_map* this)` delete all items and reset the map.
-```c
-	s_cmap_map map = {0}
-	t_uint8    age = 20;
-	
-	cmap_init(&map, 10);
-	cmap_set(&map, "F. Name", "X");
-	cmap_set(&map, "S. Name", "X");
-	cmap_set(&map, "Age",     &age);
+  cmap_item __1 = {0};
+  cmap_item __2 = {0};
 
-	/*
-		Map
-		m_size:     10
-		m_occupied: 3
-		m_items:    [
-			{ m_key: "F. Name" m_value: "X" m_hash: xxxx }
-			{ m_key: "S. Name" m_value: "X" m_hash: xxxx }
-			{ m_key: "Age"     m_value: "X" m_hash: xxxx }
-		]
-	*/
+  cmap_item buff[4] = {0};
 
-	cmap_clear(&map);
+  cmap_sinit(&_1, buff, sizeof(buff) / sizeof(cmap_item), 1);
+  cmap_dinit(&_2, sizeof(buff) / sizeof(cmap_item),  1);
+  
+  cmap_set(&_1, "First:Name", "Maksims");
+  cmap_set(&_2, "First:Name", "Maksims");
+  
+  cmap_set(&_1, "Second:Name", "Turs");
+  cmap_set(&_2, "Second:Name", "Turs");
 
-	/*
-		Map
-		m_size:     0
-		m_occupied: 0
-		m_items:    []
-	*/
-```
-`t_exec_code cmap_remove(s_cmap_map* this, const t_char* key)` Remove a single item by `key`, when item does exist do nothing. When Map is to have to few items it will be resized.
-```c
-	s_cmap_map map = {0}
-	t_uint8    age = 20;
-	
-	cmap_init(&map, 10);
-	cmap_set(&map, "F. Name", "X");
-	cmap_set(&map, "S. Name", "X");
-	cmap_set(&map, "Age",     &age);
+  cmap_print(&_1);
+  cmap_print(&_2);
 
-	/*
-		Map
-		m_size:     10
-		m_occupied: 3
-		m_items:    [
-			{ m_key: "F. Name" m_value: "X" m_hash: xxxx }
-			{ m_key: "S. Name" m_value: "X" m_hash: xxxx }
-			{ m_key: "Age"     m_value: "X" m_hash: xxxx }
-		]
-	*/
+  cmap_get(&_1, &__1, "First:Name");
+  cmap_get(&_2, &__2, "Second:Name");
 
-	cmap_remove(&map, "F. Name");
+  printf("Item from __1 map: %lli %s %s\n", __1._m_hash, __1.m_key, (t_char*)__1.m_value);
+  printf("Item from __2 map: %lli %s %s\n", __2._m_hash, __2.m_key, (t_char*)__2.m_value);
+  printf("\n");
 
-	/*
-		Map
-		m_size:     10
-		m_occupied: 2
-		m_items:    [
-			{ m_key: "S. Name" m_value: "X" m_hash: xxxx }
-			{ m_key: "Age"     m_value: "X" m_hash: xxxx }
-		]
-	*/
+  cmap_delete(&_1, "First:Name");
+  cmap_delete(&_2, "First:Name");
+
+  cmap_print(&_1);
+  cmap_print(&_2);
+
+  return 0;
+}
 ```

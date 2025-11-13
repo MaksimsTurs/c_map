@@ -4,7 +4,6 @@
 /*=======================================================================*/
 
 typedef unsigned char      t_bool;
-typedef unsigned char      t_exec_code;
 typedef char               t_char;
 
 typedef unsigned char      t_uint8;
