@@ -13,6 +13,8 @@ C Map is a very simple Hash Table implemintation in C.
 
 `cmap_delete`: Remove single item from the map, returns error code.
 
+`cmap_has`: Checks if element exist in the map.
+
 `cmap_print`: For debbuging purposes, print all elements in the map.
 
 ## Example
@@ -32,11 +34,20 @@ int main(void)
   cmap_sinit(&_1, buff, sizeof(buff) / sizeof(cmap_item), 1);
   cmap_dinit(&_2, sizeof(buff) / sizeof(cmap_item),  1);
   
-  cmap_set(&_1, "First:Name", "Maksims");
-  cmap_set(&_2, "First:Name", "Maksims");
+  cmap_set(&_1, "First:Name", "Max");
+  cmap_set(&_2, "First:Name", "Max");
   
-  cmap_set(&_1, "Second:Name", "Turs");
-  cmap_set(&_2, "Second:Name", "Turs");
+  cmap_set(&_1, "Second:Name", "Musterman");
+  cmap_set(&_2, "Second:Name", "Musterman");
+
+  if(cmap_has(&_1, "First:Name"))
+  {
+    // do stuff...
+  }
+  if(cmap_has(&_2, "Second:Name"))
+  {
+    // do stuff...
+  }
 
   cmap_print(&_1);
   cmap_print(&_2);

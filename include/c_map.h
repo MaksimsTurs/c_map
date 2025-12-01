@@ -16,12 +16,12 @@ typedef struct cmap_item {
 typedef struct {
 	struct cmap_item* m_items;
 	t_int64    				m_size;
-	t_int64    				m_occupied;
+	t_int64    				m_capacity;
 	t_int8     				m_is_resizable;
 	t_int8     				m_kind;
 } cmap;
 
-#define CMAP_MAX_MAP_SIZE CTYPE_INT64_MAX - 10
+#define CMAP_MAX_MAP_CAPACITY CTYPE_INT64_MAX - 10
 
 #define CMAP_KIND_STATIC  1
 #define CMAP_KIND_DYNAMIC 2
@@ -29,13 +29,13 @@ typedef struct {
 #define CMAP_RESIZE_DIRECTION_GROWTH 1
 #define CMAP_RESIZE_DIRECTION_SHRINK 0
 
-#define CMAP_ERR_INCORRECT_MAP_SIZE            -2
-#define CMAP_ERR_INCORRECT_KEY                 -3
-#define CMAP_ERR_ITEM_NOT_FOUND                -7
-#define CMAP_ERR_FREE_INDEX_NOT_FOUND          -6
-#define CMAP_ERR_NULL_PTR                      -1
-#define CMAP_ERR_MEM_ALLOCATION                -4
-#define CMAP_ERR_MAP_IS_FULL_AND_NOT_RESIZABLE -5
+#define CMAP_ERR_INCORRECT_MAP_CAPACITY        -1
+#define CMAP_ERR_INCORRECT_KEY                 -2
+#define CMAP_ERR_ITEM_NOT_FOUND                -3
+#define CMAP_ERR_FREE_INDEX_NOT_FOUND          -4
+#define CMAP_ERR_NULL_PTR                      -5
+#define CMAP_ERR_MEM_ALLOCATION                -6
+#define CMAP_ERR_MAP_IS_FULL_AND_NOT_RESIZABLE -7
 
 
 #define CMAP_SUCCESS          0
@@ -55,19 +55,27 @@ typedef struct {
 	if(res < 0) { return res; } \
 } while(0);
 
-#define SHOULD_MAP_GROWTH(map) map->m_is_resizable && (((t_float32)(map)->m_occupied)) / (map)->m_size >= 0.75f
-#define SHOULD_MAP_SHRINK(map) map->m_is_resizable && (((t_float32)(map)->m_occupied)) / (map)->m_size <= 0.50f
+#define SHOULD_MAP_GROWTH(map) map->m_is_resizable && (((t_float32)(map)->m_capacity)) / (map)->m_size >= 0.75f
+#define SHOULD_MAP_SHRINK(map) map->m_is_resizable && (((t_float32)(map)->m_capacity)) / (map)->m_size <= 0.50f
 
-void    cmap_print(cmap* self);
+//###########################################
+//################# Utility #################
+//###########################################
+void    cmap_print(const cmap* self);
+t_int64 cmap_hash(const t_char* key);
+t_int64 cmap_resize(cmap* self, t_uint8 direction);
+void    cmap_find_item_index_by_hash(const cmap* self, t_int64 hash, t_int64* start);
+void    cmap_find_free_index(const cmap_item* items, t_int64 size, t_int64* start);
 
+//############################################
+//################### Core ###################
+//############################################
+t_bool  cmap_has(const cmap* self, const t_char* key);
 t_int64 cmap_sinit(cmap* self, cmap_item* buff, t_int64 size, t_int8 should_expand);
 t_int64 cmap_dinit(cmap* self, t_int64 size, t_int8 should_expand);
-t_int64 cmap_set(cmap* self, t_char* key, t_any value);
-t_int64 cmap_get(cmap* self, cmap_item* item, t_char* key);
-t_int64 cmap_delete(cmap* self, t_char* key);
+t_int64 cmap_set(cmap* self, const t_char* key, t_any value);
+t_int64 cmap_get(const cmap* self, cmap_item* item, const t_char* key);
+t_int64 cmap_delete(cmap* self, const t_char* key);
 
-void    cmap_find_item_index_by_hash(cmap* self, t_int64 hash, t_int64* start);
-void    cmap_find_free_index(cmap_item* items, t_int64 size, t_int64* start);
-t_int64 cmap_resize(cmap* self, t_uint8 direction);
 
 #endif // H_CMAP
